@@ -7,10 +7,99 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Participant {
-  id        Int      @id @default(autoincrement())
-  name      String
-  age       Int
-  condition String
+enum VisitStatus {
+  SCHEDULED
+  COMPLETED
+  MISSED
+  CANCELLED
+}
+
+model Study {
+  id           String   @id @default(cuid())
+  name         String
+  protocolCode String   @unique
+  startDateUtc DateTime
+
+  sites        Site[]
+  participants Participant[]
+  templates    VisitTemplate[]
+
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Site {
+  id       String @id @default(cuid())
+  studyId  String
+  name     String
+  location String
+
+  study        Study         @relation(fields: [studyId], references: [id], onDelete: Restrict)
+  participants Participant[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([id, studyId])
+  @@unique([studyId, name])
+  @@index([studyId])
+}
+
+model VisitTemplate {
+  id         String @id @default(cuid())
+  studyId    String
+  name       String
+  offsetDays Int
+  sortOrder  Int
+
+  study  Study              @relation(fields: [studyId], references: [id], onDelete: Restrict)
+  visits ParticipantVisit[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studyId, sortOrder])
+  @@unique([studyId, name])
+  @@index([studyId])
+}
+
+model Participant {
+  id                String   @id @default(cuid())
+  studyId           String
+  siteId            String
+  subjectIdentifier String
+  fullName          String
+  dateOfBirthUtc    DateTime
+  enrolledAtUtc     DateTime @default(now())
+
+  study  Study              @relation(fields: [studyId], references: [id], onDelete: Restrict)
+  site   Site               @relation(fields: [siteId, studyId], references: [id, studyId], onDelete: Restrict)
+  visits ParticipantVisit[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studyId, subjectIdentifier])
+  @@index([studyId])
+  @@index([siteId])
+}
+
+model ParticipantVisit {
+  id                 String      @id @default(cuid())
+  participantId      String
+  visitTemplateId    String?
+  templateName       String
+  offsetDaysSnapshot Int
+  scheduledAtUtc     DateTime
+  status             VisitStatus @default(SCHEDULED)
+  completedAtUtc     DateTime?
+
+  participant   Participant    @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  visitTemplate VisitTemplate? @relation(fields: [visitTemplateId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([participantId])
+  @@index([visitTemplateId])
 }
