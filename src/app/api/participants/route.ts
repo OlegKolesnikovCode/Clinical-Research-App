@@ -1,54 +1,66 @@
-//This is the Next.js API route handler that talks to the postgreSQL database via Prisma.
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { enrollmentSchema } from "@/lib/validators/participant";
 
-import { NextResponse } from "next/server"; //Used to send responses back to the client
-import { prisma } from "@/lib/prisma"; //Your database client for reading inserting updating and deleting rows 
-
-
-//GET → read data when someone sends a GET request to /api/participants
-export async function GET() {
-  const participants = await prisma.participant.findMany({
-    orderBy: { createdAt: "desc" },
-  });
-
-  /*
-  Equivelent to SQL query:
-  SELECT * FROM Participant
-  ORDER BY createdAt DESC;
-  */
-
-  return NextResponse.json(participants); //Sends JSON back to the browser
-}
-
-//POST → create data when someone enteres data on the frontend
 export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const parsed = enrollmentSchema.safeParse(body);
 
-  const body = await req.json(); //Converts incoming JSON into a JS object
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error: "Invalid enrollment payload",
+          details: parsed.error.flatten(),
+        },
+        { status: 400 }
+      );
+    }
 
-  const { name, age, condition } = body;
+    const data = parsed.data;
 
-  //Validation  - Checks for missing data
-  if (!name || !age || !condition) {
+    const study = await prisma.study.findUnique({
+      where: { id: data.studyId },
+      select: { id: true, name: true },
+    });
+
+    if (!study) {
+      return NextResponse.json(
+        { error: "Study not found" },
+        { status: 404 }
+      );
+    }
+
+    const site = await prisma.site.findUnique({
+      where: { id: data.siteId },
+      select: { id: true, studyId: true, name: true },
+    });
+
+    if (!site) {
+      return NextResponse.json(
+        { error: "Site not found" },
+        { status: 404 }
+      );
+    }
+
+    if (site.studyId !== data.studyId) {
+      return NextResponse.json(
+        { error: "Site does not belong to the specified study" },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(
-      { error: "Missing required fields" },
-      { status: 400 }
+      {
+        message: "Enrollment entry validation passed",
+        validated: true,
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Unexpected server error" },
+      { status: 500 }
     );
   }
-  //Insert into database
-  const participant = await prisma.participant.create({
-    data: {
-      name,
-      age: Number(age),
-      condition,
-    },
-
-    /*
-      Prisma translates above post request into SQL.
-      Equivelent to:
-      INTO Participant (name, age, condition)
-      VALUES ('Oleg', 25, 'Study A')
-      RETURNING *; 
-    */
-  });
-
-  return NextResponse.json(participant, { status: 201 });
 }
