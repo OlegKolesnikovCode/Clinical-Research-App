@@ -1,4 +1,6 @@
-import { generateVisitDateUtc } from "@/lib/dates/utc";
+//only this file should be call  for participant visit generation
+
+import { buildVisitDate } from "@/lib/utils/date";
 
 type TemplateInput = {
   id: string;
@@ -18,6 +20,9 @@ export function buildParticipantVisits(params: {
     visitTemplateId: template.id,
     templateName: template.name,
     offsetDaysSnapshot: template.offsetDays,
-    scheduledAtUtc: generateVisitDateUtc(enrolledAtUtc, template.offsetDays),
+    scheduledAtUtc: buildVisitDate(
+      enrolledAtUtc,
+      template.offsetDays
+    ),
   }));
 }
