@@ -1,8 +1,50 @@
-import { NextResponse } from "next/server"; 
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { enrollmentSchema } from "@/lib/validators/enrollment";
 import { buildParticipantVisits } from "@/lib/enrollment/buildParticipantVisits";
 import { isPrismaUniqueError } from "@/lib/errors/prisma";
+
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const studyId = searchParams.get("studyId");
+    const siteId = searchParams.get("siteId");
+
+    const participants = await prisma.participant.findMany({
+      where: {
+        ...(studyId ? { studyId } : {}),
+        ...(siteId ? { siteId } : {}),
+      },
+      orderBy: [{ createdAt: "desc" }],
+      select: {
+        id: true,
+        studyId: true,
+        siteId: true,
+        subjectIdentifier: true,
+        fullName: true,
+        dateOfBirthUtc: true,
+        enrolledAtUtc: true,
+        createdAt: true,
+        updatedAt: true,
+        site: {
+          select: {
+            id: true,
+            name: true,
+            location: true,
+          },
+        },
+      },
+    });
+
+    return NextResponse.json({ participants });
+  } catch (error) {
+    console.error("GET /api/participants failed:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
 
 export async function POST(req: Request) {
   const steps: string[] = [];

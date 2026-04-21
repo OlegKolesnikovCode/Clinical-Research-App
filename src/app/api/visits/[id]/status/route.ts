@@ -15,7 +15,6 @@ export async function PATCH(
 ) {
   try {
     const { id } = await context.params;
-
     const body = await req.json();
     const status = body?.status;
 
@@ -41,10 +40,16 @@ export async function PATCH(
     });
 
     if (!visit) {
-      return NextResponse.json(
-        { error: "Visit not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Visit not found" }, { status: 404 });
+    }
+
+    if (visit.status === status) {
+      return NextResponse.json({
+        id: visit.id,
+        status: visit.status,
+        completedAtUtc: visit.completedAtUtc,
+        note: "No-op (same state)",
+      });
     }
 
     if (!canTransition(visit.status as VisitStatus, status as VisitStatus)) {
@@ -58,13 +63,6 @@ export async function PATCH(
       );
     }
 
-    if (visit.status === status) {
-      return NextResponse.json({
-        status: visit.status,
-        note: "No-op (same state)",
-      });
-    }
-
     const updated = await prisma.participantVisit.update({
       where: { id },
       data: {
@@ -74,11 +72,12 @@ export async function PATCH(
     });
 
     return NextResponse.json({
+      id: updated.id,
       status: updated.status,
+      completedAtUtc: updated.completedAtUtc,
     });
   } catch (error) {
     console.error("PATCH /api/visits/[id]/status failed:", error);
-
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

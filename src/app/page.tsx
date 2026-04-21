@@ -1,273 +1,224 @@
 "use client";
 
-import { useState } from "react";
-
-type EnrollmentSuccess = {
-  result?: {
-    participantId?: string;
-  };
-  steps?: string[];
-};
-
-type ErrorResponse = {
-  error?: string;
-  details?: unknown;
-  steps?: string[];
-};
+import { useEffect, useMemo, useState } from "react";
+import { EnrollmentForm } from "@/components/EnrollmentForm";
+import { LoadingBlock } from "@/components/LoadingBlock";
+import { ParticipantTable } from "@/components/ParticipantTable";
+import { VisitTable } from "@/components/VisitTable";
+import {
+  createParticipant,
+  getParticipants,
+  getSites,
+  getStudies,
+  getVisits,
+  updateVisitStatus,
+} from "@/lib/api";
+import type {
+  ApiError,
+  EnrollmentSuccess,
+  Participant,
+  Site,
+  Study,
+  Visit,
+  VisitStatus,
+} from "@/lib/types";
 
 export default function Home() {
-  const [studyId, setStudyId] = useState("");
-  const [siteId, setSiteId] = useState("");
-  const [subjectIdentifier, setSubjectIdentifier] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [dateOfBirthUtc, setDateOfBirthUtc] = useState("1990-01-01");
-  const [enrolledAtUtc, setEnrolledAtUtc] = useState("2026-04-19T09:00");
+  const [studies, setStudies] = useState<Study[]>([]);
+  const [sites, setSites] = useState<Site[]>([]);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [visits, setVisits] = useState<Visit[]>([]);
 
+  const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
+  const [bootstrapError, setBootstrapError] = useState<ApiError | null>(null);
+  const [participantError, setParticipantError] = useState<ApiError | null>(null);
+  const [visitError, setVisitError] = useState<ApiError | null>(null);
+  const [submitError, setSubmitError] = useState<ApiError | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState<EnrollmentSuccess | null>(null);
+
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [success, setSuccess] = useState<EnrollmentSuccess | null>(null);
-  const [error, setError] = useState<ErrorResponse | null>(null);
+  const [updatingVisitId, setUpdatingVisitId] = useState<string | null>(null);
 
-  function toIsoOrNull(localValue: string): string | null {
-    if (!localValue) return null;
-    const d = new Date(localValue);
-    if (Number.isNaN(d.getTime())) return null;
-    return d.toISOString();
-  }
+  const selectedParticipant = useMemo(
+    () => participants.find((participant) => participant.id === selectedParticipantId) ?? null,
+    [participants, selectedParticipantId]
+  );
 
-  function dateOnlyToUtcIso(dateValue: string): string | null {
-    if (!dateValue) return null;
-    const iso = new Date(`${dateValue}T00:00:00.000Z`);
-    if (Number.isNaN(iso.getTime())) return null;
-    return iso.toISOString();
-  }
-
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setSuccess(null);
-    setError(null);
-
-    const dobIso = dateOnlyToUtcIso(dateOfBirthUtc);
-    const enrolledIso = toIsoOrNull(enrolledAtUtc);
-
-    if (!dobIso || !enrolledIso) {
-      setError({
-        error: "Invalid date input",
-      });
-      setIsSubmitting(false);
-      return;
-    }
+  async function loadBootstrap() {
+    setIsBootstrapping(true);
+    setBootstrapError(null);
 
     try {
-      const res = await fetch("/api/participants", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          studyId,
-          siteId,
-          subjectIdentifier,
-          fullName,
-          dateOfBirthUtc: dobIso,
-          enrolledAtUtc: enrolledIso,
-        }),
-      });
+      const [studiesData, sitesData, participantsData] = await Promise.all([
+        getStudies(),
+        getSites(),
+        getParticipants(),
+      ]);
 
-      let data: EnrollmentSuccess | ErrorResponse | null = null;
+      setStudies(studiesData);
+      setSites(sitesData);
+      setParticipants(participantsData.participants);
 
-      try {
-        data = await res.json();
-      } catch {
-        data = null;
+      if (participantsData.participants.length > 0) {
+        setSelectedParticipantId((current) => current ?? participantsData.participants[0].id);
       }
+    } catch (error) {
+      setBootstrapError((error as ApiError) ?? { error: "Failed to load page" });
+    } finally {
+      setIsBootstrapping(false);
+    }
+  }
 
-      if (!res.ok) {
-        setError(
-          data && typeof data === "object"
-            ? (data as ErrorResponse)
-            : { error: `Request failed with status ${res.status}` }
-        );
+  async function loadParticipants() {
+    setParticipantError(null);
+
+    try {
+      const data = await getParticipants();
+      setParticipants(data.participants);
+
+      if (data.participants.length === 0) {
+        setSelectedParticipantId(null);
+        setVisits([]);
         return;
       }
 
-      setSuccess((data as EnrollmentSuccess) ?? {});
-
-      setSubjectIdentifier("");
-      setFullName("");
-    } catch {
-      setError({
-        error: "Network or server failure",
+      setSelectedParticipantId((current) => {
+        const stillExists = current && data.participants.some((participant) => participant.id === current);
+        return stillExists ? current : data.participants[0].id;
       });
+    } catch (error) {
+      setParticipantError((error as ApiError) ?? { error: "Failed to load participants" });
+    }
+  }
+
+  async function loadVisits(participantId: string) {
+    setVisitError(null);
+
+    try {
+      const data = await getVisits(participantId);
+      setVisits(data.visits);
+    } catch (error) {
+      setVisitError((error as ApiError) ?? { error: "Failed to load visits" });
+      setVisits([]);
+    }
+  }
+
+  useEffect(() => {
+    void loadBootstrap();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedParticipantId) {
+      setVisits([]);
+      return;
+    }
+
+    void loadVisits(selectedParticipantId);
+  }, [selectedParticipantId]);
+
+  async function handleEnrollment(payload: {
+    studyId: string;
+    siteId: string;
+    subjectIdentifier: string;
+    fullName: string;
+    dateOfBirthUtc: string;
+    enrolledAtUtc: string;
+    demoFailAfterParticipant?: boolean;
+  }) {
+    setIsSubmitting(true);
+    setSubmitError(null);
+    setSubmitSuccess(null);
+
+    try {
+      const data = await createParticipant(payload);
+      setSubmitSuccess(data);
+      await loadParticipants();
+
+      if (data.result?.participantId) {
+        setSelectedParticipantId(data.result.participantId);
+      }
+    } catch (error) {
+      setSubmitError((error as ApiError) ?? { error: "Enrollment failed" });
     } finally {
       setIsSubmitting(false);
     }
   }
 
+  async function handleUpdateVisitStatus(visitId: string, status: VisitStatus) {
+    setUpdatingVisitId(visitId);
+    setVisitError(null);
+
+    try {
+      await updateVisitStatus(visitId, status);
+      if (selectedParticipantId) {
+        await loadVisits(selectedParticipantId);
+      }
+    } catch (error) {
+      setVisitError((error as ApiError) ?? { error: "Status update failed" });
+    } finally {
+      setUpdatingVisitId(null);
+    }
+  }
+
+  if (isBootstrapping) {
+    return (
+      <main className="mx-auto max-w-6xl p-8">
+        <LoadingBlock label="Loading studies, sites, participants, and visits..." />
+      </main>
+    );
+  }
+
+  if (bootstrapError) {
+    return (
+      <main className="mx-auto max-w-6xl p-8">
+        <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+          <div className="font-semibold">Page load failed</div>
+          <div className="mt-1">{bootstrapError.error}</div>
+        </div>
+      </main>
+    );
+  }
+
   return (
-    <main className="max-w-3xl mx-auto p-8 space-y-8">
+    <main className="mx-auto max-w-6xl space-y-6 p-8">
       <section>
-        <h1 className="text-3xl font-bold mb-2">
-          Clinical Research Study Tracker
-        </h1>
-        <p className="text-sm text-gray-600">
-          Enroll a participant using the real API contract.
+        <h1 className="text-3xl font-bold text-slate-900">Clinical Research Study Tracker</h1>
+        <p className="mt-2 text-sm text-slate-600">
+          Minimal UI that exposes backend truth: enrollment transaction, participant list,
+          generated visits, controlled status changes, and visible errors.
         </p>
       </section>
 
-      <section className="border rounded-lg p-6 bg-white">
-        <h2 className="text-xl font-semibold mb-4">Enroll Participant</h2>
+      <EnrollmentForm
+        studies={studies}
+        sites={sites}
+        isSubmitting={isSubmitting}
+        submitError={submitError}
+        submitSuccess={submitSuccess}
+        onSubmit={handleEnrollment}
+      />
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Study ID</label>
-            <input
-              className="border p-2 w-full rounded"
-              placeholder="Enter studyId"
-              value={studyId}
-              onChange={(e) => setStudyId(e.target.value)}
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Site ID</label>
-            <input
-              className="border p-2 w-full rounded"
-              placeholder="Enter siteId"
-              value={siteId}
-              onChange={(e) => setSiteId(e.target.value)}
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Subject Identifier
-            </label>
-            <input
-              className="border p-2 w-full rounded"
-              placeholder="Example: SUBJ-001"
-              value={subjectIdentifier}
-              onChange={(e) => setSubjectIdentifier(e.target.value)}
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Full Name</label>
-            <input
-              className="border p-2 w-full rounded"
-              placeholder="Participant full name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Date of Birth (UTC date)
-            </label>
-            <input
-              type="date"
-              className="border p-2 w-full rounded"
-              value={dateOfBirthUtc}
-              onChange={(e) => setDateOfBirthUtc(e.target.value)}
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Enrollment Time
-            </label>
-            <input
-              type="datetime-local"
-              className="border p-2 w-full rounded"
-              value={enrolledAtUtc}
-              onChange={(e) => setEnrolledAtUtc(e.target.value)}
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="bg-black text-white px-4 py-2 rounded disabled:opacity-60"
-          >
-            {isSubmitting ? "Submitting..." : "Enroll Participant"}
-          </button>
-        </form>
-      </section>
-
-      {success && (
-        <section className="border border-green-300 bg-green-50 rounded-lg p-6">
-          <h2 className="text-lg font-semibold text-green-800 mb-2">
-            Enrollment Succeeded
-          </h2>
-
-          <div className="text-sm text-green-900 space-y-2">
-            <div>
-              <span className="font-medium">Participant ID:</span>{" "}
-              {success.result?.participantId ?? "Returned but not provided"}
-            </div>
-
-            <div>
-              <span className="font-medium">Steps:</span>
-              <ul className="list-disc ml-6 mt-1">
-                {(success.steps ?? []).map((step) => (
-                  <li key={step}>{step}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </section>
+      {participantError && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+          <div className="font-semibold">Participant list failed</div>
+          <div className="mt-1">{participantError.error}</div>
+        </div>
       )}
 
-      {error && (
-        <section className="border border-red-300 bg-red-50 rounded-lg p-6">
-          <h2 className="text-lg font-semibold text-red-800 mb-2">
-            Enrollment Failed
-          </h2>
+      <ParticipantTable
+        participants={participants}
+        selectedParticipantId={selectedParticipantId}
+        onSelect={setSelectedParticipantId}
+      />
 
-          <div className="text-sm text-red-900 space-y-2">
-            <div>
-              <span className="font-medium">Error:</span>{" "}
-              {error.error ?? "Unknown error"}
-            </div>
-
-            {error.steps && error.steps.length > 0 && (
-              <div>
-                <span className="font-medium">Steps:</span>
-                <ul className="list-disc ml-6 mt-1">
-                  {error.steps.map((step) => (
-                    <li key={step}>{step}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {error.details && (
-              <pre className="mt-3 p-3 bg-white border rounded overflow-x-auto text-xs">
-                {JSON.stringify(error.details, null, 2)}
-              </pre>
-            )}
-          </div>
-        </section>
-      )}
-
-      <section className="border rounded-lg p-6 bg-gray-50">
-        <h2 className="text-lg font-semibold mb-2">Notes</h2>
-        <ul className="list-disc ml-6 space-y-1 text-sm text-gray-700">
-          <li>This page no longer calls GET /api/participants on load.</li>
-          <li>That removes the 405 error from the browser console.</li>
-          <li>
-            It now matches your real enrollment route instead of the old toy CRUD
-            model.
-          </li>
-        </ul>
-      </section>
+      <VisitTable
+        participantName={selectedParticipant?.fullName ?? null}
+        visits={visits}
+        error={visitError}
+        updatingVisitId={updatingVisitId}
+        onUpdateStatus={handleUpdateVisitStatus}
+      />
     </main>
   );
 }
