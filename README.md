@@ -1,6 +1,6 @@
 # 🧠 Clinical Research Tracker: Correctness Under Failure
 
-**The High Signal:** A constraint-driven system engineered to preserve integrity-critical data. This project moves away from "trusting the code" and moves toward **enforceable invariants** through database constraints, atomic transactions, and FSM-controlled workflows.
+**The Objective:** A constraint-driven system engineered to preserve integrity-critical data. This project moves away from "trusting the code" and moves toward **enforceable invariants** through database constraints, atomic transactions, and FSM-controlled workflows.
 
 ---
 
@@ -54,7 +54,7 @@ model Participant {
   // The Integrity Guard:
   study Study @relation(fields: [studyId], references: [id], onDelete: Restrict)
 }
-🎯 Core Competencies Demonstrated
+🎯 This Project Demonstrates
 Defensive Schema Design: Utilizing Prisma attributes to enforce business logic at the data layer.
 
 Transactional Rigor: Using ACID transactions to handle complex, multi-step operations.
@@ -63,8 +63,3 @@ Clinical Domain Awareness: Solving for "uniqueness" and "time-drift," which are 
 
 One-Line Positioning: A clinical workflow system where correctness is enforced by constraints and transactions—not by trusting application code alone.
 
-
-### Why this version lands:
-1. **Prisma Specifics:** Using `@@unique` and `onDelete: Restrict` shows you know how to use your tools to their full potential.
-2. **Clarity:** It replaces general "DB constraints" with your actual implementation, which is much more credible to a Technical Lead.
-3. **Scannability:** The bold headers and table allow a hiring manager to see your "Engineering Enforcement Layer" in about 5 seconds.
