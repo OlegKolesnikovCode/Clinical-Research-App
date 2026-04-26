@@ -3,217 +3,140 @@
 
 ---
 
-## 🔗 What this project demonstrates
+## 🎯 What this is
 
 This is not a CRUD app.
 
-This is a **constraint-driven system** designed to guarantee:
+This is a **constraint-driven system** designed so that:
 
-- atomic multi-step operations (no partial writes)
-- correctness under concurrency (DB-enforced uniqueness)
-- controlled workflow transitions (FSM)
-- deterministic scheduling (UTC normalization)
-- safe failure behavior (rollback, rejection, no corruption)
+> **invalid states are impossible by design**
 
-> The system is validated by how it behaves under failure, not success.
+The system guarantees correctness under:
 
----
-
-## 🎯 Core Idea
-
-A clinical research workflow system where **invalid states are impossible by design**.
-
-Every operation passes through:
-
-- explicit constraints
-- atomic transactions
-- state-controlled transitions
-
-Result: the system remains correct under concurrency, bad input, and forced failure.
+- concurrency
+- partial failures
+- invalid input
+- workflow violations
+- timezone inconsistencies
 
 ---
 
-## ⚙️ Architecture
+## ⚙️ Core Guarantees
+
+- **Atomic operations** → no partial writes  
+- **Concurrency-safe uniqueness** → DB-enforced at commit time  
+- **Controlled workflow (FSM)** → invalid transitions rejected  
+- **Deterministic scheduling** → UTC normalized (no drift)  
+- **Safe failure behavior** → rollback or rejection, never corruption  
+
+---
+
+## 🏗️ Architecture
 
 
-UI (read-only visibility)
+Client
 ↓
 API (validation + orchestration)
 ↓
-Service Layer (transactions, FSM, invariants)
+Service (transactions + FSM)
 ↓
 Database (final authority)
 
 
-### Key Principle
-
-**The database is the final authority under concurrency.**
+**Key rules:**
+- All multi-step operations run in a **single transaction**
+- The database is the **final authority at commit time**
 
 ---
 
-# Sequence Diagram — Atomic Enrollment
+## 🔁 Atomic Enrollment (Proof)
 
 ```mermaid
 sequenceDiagram
     participant Client
-    participant API as API Layer
-    participant Service as Service Layer
-    participant DB as Database
+    participant API
+    participant Service
+    participant DB
 
     Client->>API: POST /api/participants
-    API->>API: Validate input with Zod
-    API->>Service: Call enrollment service
-
+    API->>Service: validate + call service
     Service->>DB: BEGIN TRANSACTION
-    Service->>DB: Check study + site
-    Service->>DB: Create participant
-    Service->>DB: Fetch visit templates
-    Service->>Service: Generate UTC-normalized visits
-    Service->>DB: Insert participant visits
 
-    alt Failure
+    Service->>DB: create participant
+    Service->>DB: generate + insert visits
+
+    alt failure
         Service->>DB: ROLLBACK
-        API-->>Client: 400 or 409
-    else Success
+        API-->>Client: error (400 / 409)
+    else success
         Service->>DB: COMMIT
         API-->>Client: 201 Created
     end
+🔬 Proof of Correctness (Failure-Driven)
+⚡ Concurrency Test
 
-    DB->>DB: Enforce uniqueness + foreign keys
-```
+Two identical requests sent simultaneously:
 
-## Guarantees
-
-- No partial writes
-- Database resolves concurrency conflicts at commit time
-```
-
-## 🧩 Core Guarantees (Invariants)
-
-| Guarantee | Enforcement |
-|----------|------------|
-| No duplicate participants | DB `@@unique([studyId, subjectIdentifier])` |
-| No partial enrollment | Transaction (`$transaction`) |
-| Correct under concurrency | DB constraint at commit |
-| Valid workflow only | FSM |
-| Terminal states irreversible | FSM rules |
-| No silent data loss | `onDelete: Restrict` |
-| Valid input only | Zod validation |
-| Time consistency | UTC fixed-hour normalization |
-
----
-
-## 🔍 Invariant → Enforcement → Test Traceability
-
-| Invariant | Enforcement Layer | Test |
-|----------|------------------|------|
-| Atomic enrollment | Transaction | Forced failure → rollback |
-| Uniqueness | DB constraint | Duplicate insert → 409 |
-| Concurrency safety | DB commit-time check | Parallel requests → 1 success |
-| FSM integrity | Service layer | Invalid transition → 400 |
-| Terminal states | FSM rules | Reversal attempt blocked |
-| Delete protection | DB FK (`Restrict`) | Delete parent → rejected |
-| Input validation | API (Zod) | Invalid payload → 400 |
-| Time stability | UTC normalization | Edge scheduling → no drift |
-
----
-
-## 🔥 Proof of Correctness (Failure-Driven Testing)
-
-This system includes **intentional failure testing**.
-
-> It is proven by how it fails safely.
-
----
-
-## ⚡ Concurrency Test (Reproducible)
-
-### Goal
-
-Prove DB is final authority under race conditions.
-
-### Method
-
-Run two requests simultaneously:
-
-```bash
-curl -X POST http://localhost:3000/api/participants \
-  -H "Content-Type: application/json" \
-  -d '{"studyId":"1","siteId":"1","subjectIdentifier":"RACE-001"}' &
-
-curl -X POST http://localhost:3000/api/participants \
-  -H "Content-Type: application/json" \
-  -d '{"studyId":"1","siteId":"1","subjectIdentifier":"RACE-001"}'
-Expected Result
-one request → 201 Created
-one request → 409 Conflict
-Key Insight
-both requests pass API validation
-only DB constraint resolves the conflict
-🔁 Critical Flow: Atomic Enrollment
-Validate study + site
-Create participant
-Fetch templates
-Generate visits
-Insert visits
-Commit OR rollback
-Guarantee
-all-or-nothing execution
-no intermediate state
-🔄 Workflow Control (FSM)
-SCHEDULED → COMPLETED
-           → MISSED
-           → CANCELLED
-
-Rules:
-
-invalid transitions rejected
-terminal states locked
-same-state updates = no-op
-🕒 Time Handling (Deterministic)
-stored in UTC
-normalized to fixed hour (09:00 UTC)
+curl -X POST http://localhost:3000/api/participants ... &
+curl -X POST http://localhost:3000/api/participants ...
 
 Result:
 
-no timezone drift
-consistent across environments
-🗄️ Data Model
-Study
- ├── Sites
- ├── Participants (unique per study)
- │     └── ParticipantVisits
- ├── VisitTemplates
-🧪 Running the Project
-npm install
-npx prisma migrate dev
-npm run dev
+1 → 201 Created
+1 → 409 Conflict
 
-Optional:
+Why it matters:
 
-npx prisma studio
+Both pass validation
+Only the database constraint resolves the race
+🔁 Rollback Test
+
+Force failure mid-transaction:
+
+Result:
+
+API returns error
+No data persisted
+
+Guarantee: no partial system state can exist
+
+🔄 Workflow Control (FSM)
+
+States:
+
+SCHEDULED → COMPLETED | MISSED | CANCELLED
+
+Rules:
+
+Invalid transitions → rejected
+Terminal states → irreversible
+Same-state updates → no-op (idempotent)
+🕒 Time Handling
+All timestamps stored in UTC
+Visits normalized to fixed hour (09:00 UTC)
+
+Result:
+
+No timezone drift
+Deterministic scheduling across environments
 🎬 Demo (2–3 minutes)
-Create participant (success)
-Trigger failure → rollback
-Duplicate request → 409
-Invalid transition → rejected
-Delete attempt → blocked
-🚫 What this project intentionally excludes
-authentication
-analytics dashboards
-file storage
-microservices
-Why
-
-To focus entirely on correctness and integrity
-
+Create participant → success
+Trigger failure → verify rollback
+Duplicate request → 409 conflict
+Invalid status change → rejected
+Attempt delete → blocked
 🧠 Engineering Signals
-DB as final authority
-validation vs enforcement separation
-atomic transactions
+Database as final authority
+Validation vs enforcement separation
+Atomic transaction boundaries
 FSM-controlled workflow
-explicit failure handling
-constraint-driven design
+Constraint-driven design
+Failure-first verification
+📚 Deep Dive
+Technical Design Document → /docs/TDD.md
+Proof of Failure Plan → /docs/ProofOfFailure.md
+Architecture Decisions → /docs/ADR.md
+Schema → /docs/schema.md
 📌 One-line Positioning
 
-Constraint-driven system that guarantees correctness under concurrency, failure, and invalid input through DB enforcement, atomic transactions, and controlled state transitions.
+Constraint-driven system that guarantees correctness under concurrency, failure, and invalid input through database enforcement, atomic transactions, and controlled state transitions.
