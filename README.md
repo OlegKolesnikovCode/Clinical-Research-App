@@ -1,14 +1,15 @@
 # 🧠 Clinical Research Tracker: Correctness Under Failure
 
-**The High Signal:** A backend system engineered to maintain absolute data integrity under concurrency, partial failure, and invalid input. This project moves enforcement from the volatile application layer to the **immutable database layer.**
+**The High Signal:** A constraint-driven system engineered to preserve integrity-critical data. This project moves away from "trusting the code" and moves toward **enforceable invariants** through database constraints, atomic transactions, and FSM-controlled workflows.
 
 ---
 
 ### ⚡ System Guarantees
-* **Atomic Operations:** All-or-nothing writes via single-transaction boundaries.
-* **Deterministic Concurrency:** Race conditions resolved by DB-level unique constraints.
-* **Workflow Integrity:** Finite State Machine (FSM) rejects invalid state transitions.
-* **Temporal Accuracy:** Strict UTC normalization eliminates timezone drift.
+* **Atomic Enrollment:** Participant creation and visit generation commit or rollback as a single unit.
+* **Concurrency-Safe Identity:** Duplicate participants are rejected at the DB level, preventing race-condition duplicates.
+* **Workflow Integrity:** A centralized Finite State Machine (FSM) rejects invalid visit transitions.
+* **Temporal Stability:** UTC fixed-hour normalization prevents timezone drift and scheduling errors.
+* **Safe Failure:** All errors (validation or constraint violations) result in a clean state with zero "zombie" records.
 
 ---
 
@@ -16,38 +17,54 @@
 
 | Concern | Mechanism | Engineering Result |
 | :--- | :--- | :--- |
-| **Integrity** | Foreign Keys & Unique Constraints | Prevents orphaned visits or duplicate enrollments. |
-| **Concurrency** | Composite Unique Indexes | Forces a deterministic "Winner/Loser" outcome in race conditions. |
-| **Atomicity** | ACID Transactions | Guarantees zero "Zombie" records on partial system failure. |
-| **Workflow** | Service-Layer FSM | Rejects logical violations (e.g., `MISSED` -> `COMPLETED`). |
-| **Time** | UTC Normalization | Consistent scheduling across distributed environments. |
+| **Integrity** | Foreign Keys + `onDelete: Restrict` | Prevents orphaned records and silent destructive deletes. |
+| **Concurrency** | `@@unique([studyId, subjectId])` | Forces deterministic Success/Conflict behavior. |
+| **Atomicity** | Prisma `$transaction` | Prevents partial enrollment where visits aren't generated. |
+| **Workflow** | Centralized FSM | Rejects invalid lifecycle transitions (e.g., Scheduled -> Completed). |
+| **Time** | UTC Normalization | Keeps visit dates stable across distributed environments. |
 
 ---
 
-### 🔬 Failure-Driven Proofs (The Evidence)
+### 🔬 Failure-Driven Proofs
 
-#### 1. Concurrency: The Race Condition Test
-**Scenario:** Two identical POST requests hit the API simultaneously for the same `study_id` and `participant_email`.
-* **Observed Result:** * Thread A: `201 Created`
-    * Thread B: `409 Conflict` (Error: *Unique violation*)
-* **The Proof:** Both threads passed application-level validation. Only the **Database Constraint** prevented the duplicate entry.
+#### 1. Duplicate Enrollment (Race Condition)
+**Scenario:** Two requests attempt to enroll the same `subjectIdentifier` in the same study simultaneously.
+* **Observed Result:** One request returns `201`, the duplicate returns `409 Conflict`.
+* **The Proof:** The database uniqueness constraint acts as the final gatekeeper, ensuring application-level race conditions cannot corrupt the data.
 
-#### 2. Atomicity: The "Kill Switch" Test
-**Scenario:** A `throw new Error()` is triggered after the Participant record is created but *before* the 12 Visit records are generated.
-* **Observed Result:** `500 Internal Server Error`.
-* **The Proof:** Querying the DB shows **0 records**. The `ROLLBACK` prevented a "Partial Participant" (a record with no scheduled visits).
+#### 2. Atomic Rollback (Partial Failure)
+**Scenario:** A forced failure occurs after participant creation but *before* visit generation completes.
+* **Observed Result:** Transaction rolls back; API returns an error.
+* **The Proof:** Querying the DB shows **zero records**. No "Partial Participant" exists, eliminating the need for manual data cleanup.
 
 ---
 
-### 🛠️ Implementation Detail: The "Source of Truth"
+### 🛠️ Source-of-Truth Constraint (Prisma)
 
-**Schema-Level Enforcement:**
-```sql
--- Example: Preventing double-enrollment and invalid status transitions
-CREATE TABLE participants (
-    id UUID PRIMARY KEY,
-    study_id UUID REFERENCES studies(id),
-    email TEXT NOT NULL,
-    status TEXT CHECK (status IN ('ENROLLED', 'WITHDRAWN', 'COMPLETED')),
-    UNIQUE(study_id, email) -- The Concurrency Guard
-);
+```prisma
+model Participant {
+  id                String   @id @default(cuid())
+  studyId           String
+  subjectIdentifier String
+  // ... other fields
+  
+  // The Concurrency Guard:
+  @@unique([studyId, subjectIdentifier])
+  
+  // The Integrity Guard:
+  study Study @relation(fields: [studyId], references: [id], onDelete: Restrict)
+}
+🎯 Core Competencies Demonstrated
+Defensive Schema Design: Utilizing Prisma attributes to enforce business logic at the data layer.
+
+Transactional Rigor: Using ACID transactions to handle complex, multi-step operations.
+
+Clinical Domain Awareness: Solving for "uniqueness" and "time-drift," which are high-stakes issues in research data.
+
+One-Line Positioning: A clinical workflow system where correctness is enforced by constraints and transactions—not by trusting application code alone.
+
+
+### Why this version lands:
+1. **Prisma Specifics:** Using `@@unique` and `onDelete: Restrict` shows you know how to use your tools to their full potential.
+2. **Clarity:** It replaces general "DB constraints" with your actual implementation, which is much more credible to a Technical Lead.
+3. **Scannability:** The bold headers and table allow a hiring manager to see your "Engineering Enforcement Layer" in about 5 seconds.
