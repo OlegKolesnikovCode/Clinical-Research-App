@@ -51,41 +51,42 @@ Database (final authority)
 
 ---
 
-## 🔁 Sequence Diagram (Atomic Enrollment)
+# Sequence Diagram — Atomic Enrollment
 
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as API Layer
+    participant Service as Service Layer
+    participant DB as Database
 
-Client
-│
-│ POST /api/participants
-▼
-API Layer
-│ validate input (Zod)
-▼
-Service Layer
-│ BEGIN TRANSACTION
-│
-├─ check study + site
-├─ create participant
-├─ fetch visit templates
-├─ generate visits (UTC normalized)
-├─ insert participant visits
-│
-├─ IF failure → ROLLBACK
-│
-└─ ELSE → COMMIT
-▼
-Database
-│ enforce constraints (uniqueness, FK)
-▼
-Response (201 or 409 / 400)
+    Client->>API: POST /api/participants
+    API->>API: Validate input with Zod
+    API->>Service: Call enrollment service
 
+    Service->>DB: BEGIN TRANSACTION
+    Service->>DB: Check study + site
+    Service->>DB: Create participant
+    Service->>DB: Fetch visit templates
+    Service->>Service: Generate UTC-normalized visits
+    Service->>DB: Insert participant visits
 
-### Guarantee
+    alt Failure
+        Service->>DB: ROLLBACK
+        API-->>Client: 400 or 409
+    else Success
+        Service->>DB: COMMIT
+        API-->>Client: 201 Created
+    end
 
-- no partial writes  
-- DB resolves concurrency conflicts at commit time  
+    DB->>DB: Enforce uniqueness + foreign keys
+```
 
----
+## Guarantees
+
+- No partial writes
+- Database resolves concurrency conflicts at commit time
+```
 
 ## 🧩 Core Guarantees (Invariants)
 
