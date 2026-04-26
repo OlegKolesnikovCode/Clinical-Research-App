@@ -1,3 +1,5 @@
+# 🏆 DEMO: https://clinical-research-i2p3v8tk4-olegkolesnikovcodes-projects.vercel.app/
+
 # 🧠 Clinical Research Tracker: Correctness Under Failure
 
 **The Objective:** A constraint-driven system engineered to preserve integrity-critical data. This project moves away from "trusting the code" and moves toward **enforceable invariants** through database constraints, atomic transactions, and FSM-controlled workflows.
