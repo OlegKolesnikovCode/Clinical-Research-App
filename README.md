@@ -1,55 +1,53 @@
-# 🧠 Clinical Research Tracker: High-Integrity Systems Design
+# 🧠 Clinical Research Tracker: Correctness Under Failure
 
-**The High Signal:** This is not a CRUD app. It is a **constraint-driven system** designed to guarantee data integrity under concurrency, partial failures, and distributed race conditions.
-
----
-
-### ⚡ Executive Summary (60-Second Read)
-
-* **Problem:** Clinical data corruption due to race conditions or partial writes is a multi-million dollar risk.
-* **Solution:** A backend architecture where **invalid states are mathematically impossible.**
-* **Primary Signals:** Atomic Transactions, Finite State Machines (FSM), Database-level Enforcement, and Deterministic Scheduling.
+**The High Signal:** A backend system engineered to maintain absolute data integrity under concurrency, partial failure, and invalid input. This project moves enforcement from the volatile application layer to the **immutable database layer.**
 
 ---
 
-### 🏗️ Architectural Core (The "How")
+### ⚡ System Guarantees
+* **Atomic Operations:** All-or-nothing writes via single-transaction boundaries.
+* **Deterministic Concurrency:** Race conditions resolved by DB-level unique constraints.
+* **Workflow Integrity:** Finite State Machine (FSM) rejects invalid state transitions.
+* **Temporal Accuracy:** Strict UTC normalization eliminates timezone drift.
 
-| Feature | Engineering Implementation | Failure Mitigation |
+---
+
+### 🏗️ Engineering Enforcement Layer
+
+| Concern | Mechanism | Engineering Result |
 | :--- | :--- | :--- |
-| **Integrity** | **Database-as-Authority** | Eliminates "split-brain" states where API and DB disagree. |
-| **Concurrency** | **Strict Unique Constraints** | Guarantees 1 -> 201 and 1 -> 409 results during race conditions. |
-| **Atomicity** | **Single-Transaction Units** | Prevents "Zombie Participants" (orphaned records after partial failure). |
-| **Logic** | **Strict FSM** | Rejects invalid transitions (e.g., MISSED -> COMPLETED) at the service layer. |
-| **Time** | **UTC Normalization** | Prevents scheduling drift across distributed time zones. |
+| **Integrity** | Foreign Keys & Unique Constraints | Prevents orphaned visits or duplicate enrollments. |
+| **Concurrency** | Composite Unique Indexes | Forces a deterministic "Winner/Loser" outcome in race conditions. |
+| **Atomicity** | ACID Transactions | Guarantees zero "Zombie" records on partial system failure. |
+| **Workflow** | Service-Layer FSM | Rejects logical violations (e.g., `MISSED` -> `COMPLETED`). |
+| **Time** | UTC Normalization | Consistent scheduling across distributed environments. |
 
 ---
 
-### 🔬 Proof of Correctness (Failure-Driven)
+### 🔬 Failure-Driven Proofs (The Evidence)
 
-#### 1. The Race Condition Test
-**Scenario:** Two identical POST requests hit the API at the exact same millisecond.
-* **Result:** Request A: `201 Created` | Request B: `409 Conflict`.
-* **Signal:** Validation happens at the edge, but **enforcement** is locked at the commit level.
+#### 1. Concurrency: The Race Condition Test
+**Scenario:** Two identical POST requests hit the API simultaneously for the same `study_id` and `participant_email`.
+* **Observed Result:** * Thread A: `201 Created`
+    * Thread B: `409 Conflict` (Error: *Unique violation*)
+* **The Proof:** Both threads passed application-level validation. Only the **Database Constraint** prevented the duplicate entry.
 
-#### 2. The Partial Failure (Rollback) Test
-**Scenario:** A system crash or network timeout occurs after creating a Participant but *before* generating their 12 monthly visits.
-* **Result:** `ROLLBACK`. Zero records are persisted.
-* **Signal:** System maintains a "Clean or Nothing" state; no manual data cleanup required.
-
----
-
-### 🛠️ Technical Stack & Patterns
-* **Pattern:** Service-Layer Orchestration with Transactional Boundaries.
-* **Logic:** Finite State Machine (Scheduled -> Completed/Missed/Cancelled).
-* **Storage:** Relational DB with composite keys and check constraints.
+#### 2. Atomicity: The "Kill Switch" Test
+**Scenario:** A `throw new Error()` is triggered after the Participant record is created but *before* the 12 Visit records are generated.
+* **Observed Result:** `500 Internal Server Error`.
+* **The Proof:** Querying the DB shows **0 records**. The `ROLLBACK` prevented a "Partial Participant" (a record with no scheduled visits).
 
 ---
 
-### 📂 Deep Dive & Documentation
-* [**Technical Design Doc**](./docs/TDD.md): Reasoning on trade-offs and opportunity costs.
-* [**Architecture Decisions (ADR)**](./docs/ADR.md): Why I chose DB enforcement over application-level locks.
-* [**Proof of Failure Plan**](./docs/ProofOfFailure.md): Comprehensive edge-case testing suite.
+### 🛠️ Implementation Detail: The "Source of Truth"
 
----
-
-**One-Line Positioning:** *An engineering-first system demonstrating how to build software that remains correct even when the environment fails.*
+**Schema-Level Enforcement:**
+```sql
+-- Example: Preventing double-enrollment and invalid status transitions
+CREATE TABLE participants (
+    id UUID PRIMARY KEY,
+    study_id UUID REFERENCES studies(id),
+    email TEXT NOT NULL,
+    status TEXT CHECK (status IN ('ENROLLED', 'WITHDRAWN', 'COMPLETED')),
+    UNIQUE(study_id, email) -- The Concurrency Guard
+);
