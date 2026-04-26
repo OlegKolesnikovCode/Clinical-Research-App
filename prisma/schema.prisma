@@ -102,4 +102,5 @@ model ParticipantVisit {
 
   @@index([participantId])
   @@index([visitTemplateId])
+  @@unique([participantId, visitTemplateId])
 }
