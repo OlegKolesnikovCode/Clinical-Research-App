@@ -38,6 +38,15 @@
 * **The Proof:** Querying the DB shows **zero records**. No "Partial Participant" exists, eliminating the need for manual data cleanup.
 
 ---
+🎯 This Project Demonstrates
+Defensive Schema Design: Utilizing Prisma attributes to enforce business logic at the data layer.
+
+Transactional Rigor: Using ACID transactions to handle complex, multi-step operations.
+
+Clinical Domain Awareness: Solving for "uniqueness" and "time-drift," which are high-stakes issues in research data.
+
+One-Line Positioning: A clinical workflow system where correctness is enforced by constraints and transactions—not by trusting application code alone.
+
 
 ### 🛠️ Source-of-Truth Constraint (Prisma)
 
@@ -54,12 +63,3 @@ model Participant {
   // The Integrity Guard:
   study Study @relation(fields: [studyId], references: [id], onDelete: Restrict)
 }
-🎯 This Project Demonstrates
-Defensive Schema Design: Utilizing Prisma attributes to enforce business logic at the data layer.
-
-Transactional Rigor: Using ACID transactions to handle complex, multi-step operations.
-
-Clinical Domain Awareness: Solving for "uniqueness" and "time-drift," which are high-stakes issues in research data.
-
-One-Line Positioning: A clinical workflow system where correctness is enforced by constraints and transactions—not by trusting application code alone.
-
