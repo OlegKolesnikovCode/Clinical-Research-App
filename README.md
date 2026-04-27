@@ -1,58 +1,123 @@
-# 🏆 DEMO: https://clinical-research-i2p3v8tk4-olegkolesnikovcodes-projects.vercel.app/
+***
+# 🔬 Clinical Research Study Tracker
+### 🛡️ **Correctness is enforced, not assumed.**
 
-# 🧠 Clinical Research Tracker: Correctness Under Failure
+This is a **constraint-driven system** engineered to manage clinical study enrollments with high-integrity guarantees. It treats data integrity not as a feature, but as a formal requirement.
 
-**The Objective:** A constraint-driven system engineered to preserve integrity-critical data. This project moves away from "trusting the code" and moves toward **enforceable invariants** through database constraints, atomic transactions, and FSM-controlled workflows.
-
----
-
-### ⚡ System Guarantees
-* **Atomic Enrollment:** Participant creation and visit generation commit or rollback as a single unit.
-* **Concurrency-Safe Identity:** Duplicate participants are rejected at the DB level, preventing race-condition duplicates.
-* **Workflow Integrity:** A centralized Finite State Machine (FSM) rejects invalid visit transitions.
-* **Temporal Stability:** UTC fixed-hour normalization prevents timezone drift and scheduling errors.
-* **Safe Failure:** All errors (validation or constraint violations) result in a clean state with zero "zombie" records.
+The system enforces correctness through:
+- 🧱 **Database Constraints** (The final authority)
+- ⚛️ **Atomic Transactions** (All-or-nothing execution)
+- 🚦 **FSM Enforcement** (Controlled workflow transitions)
+- 🕒 **Deterministic Scheduling** (UTC normalization)
+- 🙅 **Explicit Rejection** (Blocking invalid operations at the boundary)
 
 ---
 
-### 🏗️ Engineering Enforcement Layer
+## 🚀 Start Here: The 2-Minute Proof
+*Do not start with the code. Observe the system under failure conditions.*
 
-| Concern | Mechanism | Engineering Result |
+Follow this sequence to verify the system's integrity:
+
+1. ✅ **Enrollment Success**  
+   Execute a valid enrollment → Data is created correctly.
+2. 🔄 **Atomic Rollback**  
+   Force failure mid-transaction → **No partial writes occur.**
+3. 🆔 **Duplicate Protection**  
+   Re-submit the same participant → **409 Conflict (Idempotency enforced).**
+4. 🚦 **FSM Enforcement**  
+   Attempt an illegal status transition → **Request rejected by State Machine.**
+5. 🧱 **Relational Integrity**  
+   Attempt to delete a parent with children → **Blocked by DB Foreign Key.**
+
+➡️ **Run the demo:** [`/docs/START_HERE/00_RUN_DEMO.md`](./docs/START_HERE/00_RUN_DEMO.md)
+
+---
+
+## 🏗️ Enforcement Path (Non-Bypassable)
+
+All state changes must pass through a single, unidirectional gauntlet. **No state change can bypass this path.**
+
+```mermaid
+graph LR
+  A[📥 Request] --> B[🛡️ Validation] --> C[🆔 Transaction] --> D[🚦 FSM Rules] --> E[✍️ Writes] --> F[💾 Database]
+```
+
+### Enforcement Responsibilities:
+*   **Validation:** Rejects malformed input early.
+*   **Transaction:** Ensures all-or-nothing execution.
+*   **FSM:** Enforces lifecycle correctness (e.g., you cannot "Complete" a study that hasn't "Started").
+*   **Database:** Enforces final integrity through hard constraints (FK/Unique).
+
+---
+
+## 💎 System Guarantees
+
+Each guarantee is enforced by a concrete mechanism to eliminate a specific failure class.
+
+| Guarantee | ⚙️ Mechanism | 🚫 Failure Prevented |
 | :--- | :--- | :--- |
-| **Integrity** | Foreign Keys + `onDelete: Restrict` | Prevents orphaned records and silent destructive deletes. |
-| **Concurrency** | `@@unique([studyId, subjectId])` | Forces deterministic Success/Conflict behavior. |
-| **Atomicity** | Prisma `$transaction` | Prevents partial enrollment where visits aren't generated. |
-| **Workflow** | Centralized FSM | Rejects invalid lifecycle transitions (e.g., Scheduled -> Completed). |
-| **Time** | UTC Normalization | Keeps visit dates stable across distributed environments. |
+| **Atomic Transactions** | Single transaction boundary | Partial writes / Rollback corruption |
+| **Duplicate Protection** | DB Unique Constraint + 409 Map | Duplicate state under concurrency |
+| **Lifecycle Governance** | Central FSM Rules | Invalid state transitions |
+| **Persistence Integrity** | FK / UNIQUE / Restrict Deletes | Orphaned or invalid records |
+| **Temporal Determinism** | UTC Fixed-hour Normalization | Timezone drift / Scheduling errors |
 
 ---
 
-### 🔬 Failure-Driven Proofs
+## 🧬 Proof Structure (Traceability)
 
-#### 1. Duplicate Enrollment (Race Condition)
-**Scenario:** Two requests attempt to enroll the same `subjectIdentifier` in the same study simultaneously.
-* **Observed Result:** One request returns `201`, the duplicate returns `409 Conflict`.
-* **The Proof:** The database uniqueness constraint acts as the final gatekeeper, ensuring application-level race conditions cannot corrupt the data.
+This repository is organized as a correctness proof system, not just a feature set.
 
-#### 2. Atomic Rollback (Partial Failure)
-**Scenario:** A forced failure occurs after participant creation but *before* visit generation completes.
-* **Observed Result:** Transaction rolls back; API returns an error.
-* **The Proof:** Querying the DB shows **zero records**. No "Partial Participant" exists, eliminating the need for manual data cleanup.
+*   📂 **`docs/START_HERE/`** → Guided failure-based demo.
+*   📂 **`docs/TRACE/`** → Mapping of Invariants → Code → Tests.
+*   📂 **`docs/SPEC/`** → L0–L11 system authority documents.
+*   📂 **`tests/falsification/`** → Tests designed specifically to *break* guarantees.
+
+> **Defined → Enforced → Tested → Falsifiable**
 
 ---
 
-### 🛠️ Source-of-Truth Constraint (Prisma)
+## 🛠️ Tech Stack
 
-```prisma
-model Participant {
-  id                String   @id @default(cuid())
-  studyId           String
-  subjectIdentifier String
-  // ... other fields
-  
-  // The Concurrency Guard:
-  @@unique([studyId, subjectIdentifier])
-  
-  // The Integrity Guard:
-  study Study @relation(fields: [studyId], references: [id], onDelete: Restrict)
-}
+*   **Framework:** Next.js (App Router)
+*   **Language:** TypeScript (Strict Mode)
+*   **Database:** PostgreSQL
+*   **ORM:** Prisma
+*   **Validation:** Zod
+*   **Time Handling:** date-fns (UTC normalization)
+*   **Styling:** Tailwind CSS
+
+---
+
+## ⚙️ Run Locally
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Setup database (Postgres)
+npx prisma generate
+npx prisma migrate dev
+
+# 3. Start the application
+npm run dev
+
+# 4. Run verification tests
+npm test
+```
+
+---
+
+## ⚖️ Design Principle
+> "If a system can enter an invalid state, it is incorrectly designed. This system is built so invalid states are rejected or unrepresentable."
+
+---
+
+## 🧠 Final Positioning
+
+This is not a CRUD application. This is a **constraint-driven system** that demonstrates:
+*   Integrity under **failure**.
+*   Correctness under **concurrency**.
+*   Explicit enforcement of **invariants**.
+
+The system is proven by how it behaves when things go **wrong** — not when they go right.
