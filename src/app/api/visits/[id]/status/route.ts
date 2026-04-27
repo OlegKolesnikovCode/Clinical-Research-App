@@ -35,6 +35,8 @@ export async function PATCH(
       );
     }
 
+    const nextStatus = status as VisitStatus;
+
     const visit = await prisma.participantVisit.findUnique({
       where: { id },
     });
@@ -43,7 +45,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Visit not found" }, { status: 404 });
     }
 
-    if (visit.status === status) {
+    if (visit.status === nextStatus) {
       return NextResponse.json({
         id: visit.id,
         status: visit.status,
@@ -52,29 +54,46 @@ export async function PATCH(
       });
     }
 
-    if (!canTransition(visit.status as VisitStatus, status as VisitStatus)) {
+    if (!canTransition(visit.status as VisitStatus, nextStatus)) {
       return NextResponse.json(
         {
           error: "Invalid status transition",
           current: visit.status,
-          attempted: status,
+          attempted: nextStatus,
         },
         { status: 400 }
       );
     }
-
-    const updated = await prisma.participantVisit.update({
-      where: { id },
+    
+    //fix(fsm): make status transitions concurrency-safe
+    const result = await prisma.participantVisit.updateMany({
+      where: {
+        id,
+        status: visit.status,
+      },
       data: {
-        status: status as VisitStatus,
-        completedAtUtc: status === "COMPLETED" ? new Date() : null,
+        status: nextStatus,
+        completedAtUtc: nextStatus === "COMPLETED" ? new Date() : null,
       },
     });
 
+    if (result.count === 0) {
+      return NextResponse.json(
+        {
+          error: "Visit status changed during update. Retry with latest state.",
+        },
+        { status: 409 }
+      );
+    }
+
+    const updated = await prisma.participantVisit.findUnique({
+      where: { id },
+    });
+
     return NextResponse.json({
-      id: updated.id,
-      status: updated.status,
-      completedAtUtc: updated.completedAtUtc,
+      id: updated?.id,
+      status: updated?.status,
+      completedAtUtc: updated?.completedAtUtc,
     });
   } catch (error) {
     console.error("PATCH /api/visits/[id]/status failed:", error);
