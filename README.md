@@ -29,7 +29,7 @@ Follow this sequence to verify the system's integrity:
 5. 🧱 **Relational Integrity**  
    Attempt to delete a parent with children → **Blocked by DB Foreign Key.**
 
-➡️ **Run the demo:** [`/docs/START_HERE/00_RUN_DEMO.md`](./docs/START_HERE/00_RUN_DEMO.md)
+➡️ **Run the demo:** https://clinical-research-46fp03vos-olegkolesnikovcodes-projects.vercel.app
 
 ---
 
