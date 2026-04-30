@@ -29,10 +29,7 @@ Follow this sequence to verify the system's integrity:
 5. 🧱 **Relational Integrity**  
    Attempt to delete a parent with children → **Blocked by DB Foreign Key.**
 
-<a href="https://clinical-research-46fp03vos-olegkolesnikovcodes-projects.vercel.app" 
-   style="background-color: #0070f3; color: white; padding: 15px 32px; text-align: center; text-decoration: none; display: inline-block; font-size: 18px; font-weight: bold; border-radius: 8px; margin: 4px 2px; cursor: pointer; box-shadow: 0 4px 14px 0 rgba(0,118,255,0.39);">
-   ➡️ Run the Demo
-</a>
+[![Run Demo](https://img.shields.io/badge/Run%20the%20Demo-Blue?style=for-the-badge&logo=vercel&logoColor=white)](https://clinical-research-46fp03vos-olegkolesnikovcodes-projects.vercel.app)
 
 ---
 
